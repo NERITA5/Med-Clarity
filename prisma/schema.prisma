@@ -1,43 +1,57 @@
-generator client {
-  provider = "prisma-client-js"
-}
+"use server";
+import Groq from "groq-sdk";
+import { auth } from "@clerk/nextjs/server";
+import prisma from "@/lib/prisma";
 
-datasource db {
-  provider = "postgresql"
-  
-}
+const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
-model UserProfile {
-  id              String   @id @default(cuid())
-  clerkId         String   @unique
-  
-  // Basic Info (Required for accurate AI)
-  age             Int
-  sex             String   // "Male", "Female", "Other"
-  
-  // Recommended Info
-  weight          Float?   // in kg
-  height          Float?   // in cm
-  
-  // Optional Health Context
-  conditions      String?  
-  symptoms        String?  
-  medications     String?  
-  
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-  
-  reports         LabReport[]
-}
+export async function interpretFile(base64File: string, fileType: string, profile: any) {
+  // 1. Authenticate the user
+  const { userId } = await auth();
+  if (!userId) {
+    return { error: "You must be signed in to save and analyze reports." };
+  }
 
-model LabReport {
-  id              String   @id @default(cuid())
-  userId          String
-  user            UserProfile @relation(fields: [userId], references: [clerkId])
-  
-  rawText         String?  
-  imageUrl        String?  
-  aiInterpretation String  
-  
-  createdAt       DateTime @default(now())
+  if (fileType === "application/pdf") {
+    return { error: "Groq Vision currently requires image files (JPG/PNG). Please upload a screenshot." };
+  }
+
+  try {
+    // 2. Perform AI Analysis with Groq
+    const response = await groq.chat.completions.create({
+      messages: [
+        {
+          role: "user",
+          content: [
+            { 
+              type: "text", 
+              text: `You are a medical lab assistant. Analyze this report for a ${profile.age}yo ${profile.sex}. 
+                     Explain the results in simple terms, highlight any values outside normal ranges, 
+                     and provide general health advice. Do not provide a formal diagnosis.` 
+            },
+            { type: "image_url", image_url: { url: base64File } },
+          ],
+        },
+      ],
+      model: "llama-3.2-11b-vision-preview",
+    });
+
+    const aiResult = response.choices[0]?.message?.content || "No interpretation generated.";
+
+    // 3. Save to Database (Matches your schema exactly)
+    // We use clerkId as the linking field because your schema references clerkId
+    await prisma.labReport.create({
+      data: {
+        userId: userId, 
+        aiInterpretation: aiResult,
+        imageUrl: fileType.startsWith("image") ? "Image Processed" : null, // Placeholder for URL
+        rawText: "Vision Data", 
+      }
+    });
+
+    return { text: aiResult };
+  } catch (error) {
+    console.error("Analysis Error:", error);
+    return { error: "Analysis failed. Please ensure the image is clear and the API key is valid." };
+  }
 }
