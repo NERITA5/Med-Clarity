@@ -6,46 +6,40 @@ import prisma from "@/lib/prisma";
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
 export async function interpretFile(base64File: string, fileType: string, profile: any) {
-  // 1. Security Check: Get the user from Clerk
   const { userId } = await auth();
-  if (!userId) {
-    return { error: "You must be signed in to analyze reports." };
-  }
-
-  if (fileType === "application/pdf") {
-    return { error: "PDF detected! Please upload a JPG or PNG instead." };
-  }
+  if (!userId) return { error: "Auth failed" };
 
   try {
-    // 2. AI Analysis
     const response = await groq.chat.completions.create({
       messages: [
         {
           role: "user",
           content: [
-            { type: "text", text: `Analyze this medical report for a ${profile.age}yo ${profile.sex}. Explain findings simply and clearly.` },
+            { type: "text", text: `Analyze lab for ${profile.age}yo ${profile.sex}.` },
             { type: "image_url", image_url: { url: base64File } },
           ],
         },
       ],
-      model: "llama-3.2-11b-vision-preview", // Note: Ensure you use a vision-capable model
+      model: "llama-3.2-11b-vision-preview",
     });
 
-    const aiResult = response.choices[0]?.message?.content || "Could not read report.";
+    const aiResult = response.choices[0]?.message?.content || "No result";
 
-    // 3. Database Save: Persist to Neon via Prisma
-    await prisma.labReport.create({
+    // DEBUG: We are going to try an upsert or a direct create
+    // This ensures we link to the Clerk ID properly
+    const savedReport = await prisma.labReport.create({
       data: {
-        userId: userId, // Links the report to the user
-        analysis: aiResult,
-        status: "COMPLETED",
-        // Add other fields if your schema requires them (e.g., fileUrl)
+        userId: userId,
+        aiInterpretation: aiResult,
+        rawText: "Vision Analysis",
+        imageUrl: "Processed",
       }
     });
 
+    console.log("Database Save Success:", savedReport.id);
     return { text: aiResult };
-  } catch (error) {
-    console.error("Analysis Error:", error);
-    return { error: "Analysis failed. Please ensure the image is clear and under 4MB." };
+  } catch (error: any) {
+    console.error("CRITICAL DATABASE ERROR:", error.message);
+    return { error: `Analysis worked but DB Save failed: ${error.message}` };
   }
 }
