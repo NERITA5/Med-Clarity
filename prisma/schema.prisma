@@ -1,0 +1,43 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  
+}
+
+model UserProfile {
+  id              String   @id @default(cuid())
+  clerkId         String   @unique
+  
+  // Basic Info (Required for accurate AI)
+  age             Int
+  sex             String   // "Male", "Female", "Other"
+  
+  // Recommended Info
+  weight          Float?   // in kg
+  height          Float?   // in cm
+  
+  // Optional Health Context
+  conditions      String?  
+  symptoms        String?  
+  medications     String?  
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  reports         LabReport[]
+}
+
+model LabReport {
+  id              String   @id @default(cuid())
+  userId          String
+  user            UserProfile @relation(fields: [userId], references: [clerkId])
+  
+  rawText         String?  
+  imageUrl        String?  
+  aiInterpretation String  
+  
+  createdAt       DateTime @default(now())
+}

@@ -1,0 +1,1 @@
+export const runtime = "edge"; export default function NotFound() { return (<html><body style={{ fontFamily: "sans-serif", padding: "50px", textAlign: "center" }}><h1>404 - Page Not Found</h1><p>The medical dashboard is currently unavailable at this URL.</p><a href="/">Return Home</a></body></html>); }
